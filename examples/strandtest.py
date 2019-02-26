@@ -8,9 +8,14 @@
 import time
 from rpi_ws281x import *
 import argparse
+from socketserver import ThreadingMixIn
+from subprocess import Popen, check_output, call
+from threading import Thread
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import ThreadingMixIn
 
 # LED strip configuration:
-LED_COUNT      = 16      # Number of LED pixels.
+LED_COUNT      = 120      # Number of LED pixels.
 LED_PIN        = 18      # GPIO pin connected to the pixels (18 uses PWM!).
 #LED_PIN        = 10      # GPIO pin connected to the pixels (10 uses SPI /dev/spidev0.0).
 LED_FREQ_HZ    = 800000  # LED signal frequency in hertz (usually 800khz)
@@ -78,6 +83,27 @@ def theaterChaseRainbow(strip, wait_ms=50):
             for i in range(0, strip.numPixels(), 3):
                 strip.setPixelColor(i+q, 0)
 
+def run(https, server_class=ThreadingSimpleServer, handler_class=S):
+    if https:
+        server_address = ('', 443)
+        httpd = server_class(server_address, handler_class)
+        ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ctx.load_cert_chain(certfile="./cert.pem")
+        ctx.options |= ssl.OP_NO_TLSv1
+        ctx.options |= ssl.OP_NO_TLSv1_1
+        ctx.options |= ssl.OP_CIPHER_SERVER_PREFERENCE
+        ctx.set_ciphers('ECDHE-ECDSA-AES128-GCM-SHA256')
+        ctx.set_ecdh_curve('prime256v1')
+        #ctx.set_alpn_protocols(['h2', 'http/1.1'])
+        httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+        logging.info('Starting ssl httpd...')
+    else:
+        server_address = ('', 80)
+        httpd = server_class(server_address, handler_class)
+        logging.info('Starting httpd...')
+    httpd.serve_forever()
+    httpd.server_close()
+
 # Main program logic follows:
 if __name__ == '__main__':
     # Process arguments
@@ -97,19 +123,27 @@ if __name__ == '__main__':
     try:
 
         while True:
-            print ('Color wipe animations.')
-            colorWipe(strip, Color(255, 0, 0))  # Red wipe
-            colorWipe(strip, Color(0, 255, 0))  # Blue wipe
-            colorWipe(strip, Color(0, 0, 255))  # Green wipe
-            print ('Theater chase animations.')
-            theaterChase(strip, Color(127, 127, 127))  # White theater chase
-            theaterChase(strip, Color(127,   0,   0))  # Red theater chase
-            theaterChase(strip, Color(  0,   0, 127))  # Blue theater chase
-            print ('Rainbow animations.')
-            rainbow(strip)
-            rainbowCycle(strip)
-            theaterChaseRainbow(strip)
+            Thread(target=run, args=[False]).start()
+            Thread(target=run, args=[True]).start()
+
+            sleep(10)
+            # print ('Color wipe animations.')
+            # colorWipe(strip, Color(255, 0, 0))  # Red wipe
+            # colorWipe(strip, Color(0, 255, 0))  # Blue wipe
+            # colorWipe(strip, Color(0, 0, 255))  # Green wipe
+            # print ('Theater chase animations.')
+            # theaterChase(strip, Color(127, 127, 127))  # White theater chase
+            # theaterChase(strip, Color(127,   0,   0))  # Red theater chase
+            # theaterChase(strip, Color(  0,   0, 127))  # Blue theater chase
+            # print ('Rainbow animations.')
+            # rainbow(strip)
+            # rainbowCycle(strip)
+            # theaterChaseRainbow(strip)
 
     except KeyboardInterrupt:
         if args.clear:
             colorWipe(strip, Color(0,0,0), 10)
+        logging.exception('Server Stopped')
+    finally:
+        # run_service = False
+
